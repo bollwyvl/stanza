@@ -186,6 +186,8 @@ def extract_bert_embeddings(model_name, tokenizer, model, data, device, keep_end
         data = fix_german_tokens(tokenizer, data)
 
     is_xlnet = model_name.startswith("xlnet")
+    is_t5 = model_name.startswith("t5") or model_name.startswith("google/t5")
+
     #add add_prefix_space = True for RoBerTa-- error if not
     if isinstance(data, tuple):
         data = list(data)
@@ -202,6 +204,8 @@ def extract_bert_embeddings(model_name, tokenizer, model, data, device, keep_end
                 # we will add a <pad> to the start of each sentence for the endpoints
                 if offset == 0 and list_offsets[idx][offset+1] is None:
                     list_offsets[idx][offset] = pos
+                list_offsets[idx][offset+1] = pos + 1
+            elif is_t5:
                 list_offsets[idx][offset+1] = pos + 1
             else:
                 list_offsets[idx][offset+1] = pos
@@ -227,11 +231,18 @@ def extract_bert_embeddings(model_name, tokenizer, model, data, device, keep_end
                 # maybe make the entry before the first active token 1?
                 attention_mask = [[0] + x for x in tokenized['attention_mask'][128*i:128*i+128]]
                 attention_mask = torch.tensor(attention_mask, device=device)
+            elif is_t5:
+                input_ids = [[tokenizer.pad_token_id] + x for x in tokenized['input_ids'][128*i:128*i+128]]
+                attention_mask = [[1] + x for x in tokenized['attention_mask'][128*i:128*i+128]]
+                attention_mask = torch.tensor(attention_mask, device=device)
             else:
                 input_ids = tokenized['input_ids'][128*i:128*i+128]
                 attention_mask = torch.tensor(tokenized['attention_mask'][128*i:128*i+128], device=device)
             id_tensor = torch.tensor(input_ids, device=device)
-            feature = model(id_tensor, attention_mask=attention_mask, output_hidden_states=True)
+            if is_t5:
+                feature = model.encoder(id_tensor, attention_mask=attention_mask, output_hidden_states=True)
+            else:
+                feature = model(id_tensor, attention_mask=attention_mask, output_hidden_states=True)
             # feature[2] is the same for bert, but it didn't work for
             # older versions of transformers for xlnet
             # feature = feature[2]
@@ -239,6 +250,9 @@ def extract_bert_embeddings(model_name, tokenizer, model, data, device, keep_end
             feature = torch.stack(feature[-4:-1], axis=3).sum(axis=3) / 4
             features += feature.clone().detach()
 
+    #print(attention_mask)
+    #print(input_ids)
+    #print(list_offsets)
     processed = []
     #process the output
     if not keep_endpoints:
