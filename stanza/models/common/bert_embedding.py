@@ -189,7 +189,7 @@ def extract_bert_embeddings(model_name, tokenizer, model, data, device, keep_end
     #add add_prefix_space = True for RoBerTa-- error if not
     if isinstance(data, tuple):
         data = list(data)
-    tokenized = tokenizer(data, padding="longest", is_split_into_words=True, return_offsets_mapping=False, return_attention_mask=False)
+    tokenized = tokenizer(data, padding="longest", is_split_into_words=True, return_offsets_mapping=False, return_attention_mask=True)
     list_offsets = [[None] * (len(sentence)+2) for sentence in data]
     for idx in range(len(data)):
         offsets = tokenized.word_ids(batch_index=idx)
@@ -220,11 +220,18 @@ def extract_bert_embeddings(model_name, tokenizer, model, data, device, keep_end
     for i in range(int(math.ceil(len(data)/128))):
         with torch.no_grad():
             if is_xlnet:
+                # put a pad at the start which we keep as the start token
+                # TODO: maybe there's some better way to do this?
+                # it seems bert, roberta, etc produce start tokens and xlnet doesn't
                 input_ids = [[tokenizer.pad_token_id] + x for x in tokenized['input_ids'][128*i:128*i+128]]
+                # maybe make the entry before the first active token 1?
+                attention_mask = [[0] + x for x in tokenized['attention_mask'][128*i:128*i+128]]
+                attention_mask = torch.tensor(attention_mask, device=device)
             else:
                 input_ids = tokenized['input_ids'][128*i:128*i+128]
+                attention_mask = torch.tensor(tokenized['attention_mask'][128*i:128*i+128], device=device)
             id_tensor = torch.tensor(input_ids, device=device)
-            feature = model(id_tensor, output_hidden_states=True)
+            feature = model(id_tensor, attention_mask=attention_mask, output_hidden_states=True)
             # feature[2] is the same for bert, but it didn't work for
             # older versions of transformers for xlnet
             # feature = feature[2]
