@@ -355,6 +355,8 @@ def build_trainer(args, train_trees, dev_trees, foundation_cache, model_load_fil
         if args['cuda']:
             model.cuda()
         model.copy_with_new_structure(trainer.model)
+        # TODO: a different mechanism?
+        is_frozen = lambda x: not x.startswith("partitioned_transformer_module") and not x.startswith("word_lstm.weight_ih_l0")
         optimizer = build_optimizer(args, model)
         scheduler = build_scheduler(args, optimizer)
         trainer = Trainer(args, model, optimizer, scheduler)
@@ -741,6 +743,15 @@ def train_model_one_batch(epoch, batch_idx, model, batch, transition_tensors, mo
 
     tree_loss = model_loss_function(errors, answers)
     tree_loss.backward()
+    for name, param in model.named_parameters():
+        if name.startswith("partitioned_transformer_module"):
+            continue
+        elif name.startswith("word_lstm.weight_ih_l0"):
+            masked_grad = model.word_input_size - model.pattn_d_model
+            param.grad[:, :masked_grad] = 0
+        else:
+            param.grad = None
+
     if args['watch_regex']:
         matched = False
         logger.info("Watching %s   ... epoch %d batch %d", args['watch_regex'], epoch, batch_idx)
