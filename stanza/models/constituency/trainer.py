@@ -748,9 +748,9 @@ def train_model_one_batch(epoch, batch_idx, model, batch, transition_tensors, mo
             continue
         elif name.startswith("word_lstm.weight_ih_l0"):
             masked_grad = model.word_input_size - model.pattn_d_model
-            param.grad[:, :masked_grad] = 0
-        else:
-            param.grad = None
+            param.grad[:, :masked_grad] *= 0.001
+        elif param.grad is not None:
+            param.grad *= 0.001
 
     if args['watch_regex']:
         matched = False
